@@ -1,520 +1,349 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Calendar, 
-  Users, 
-  Save, 
-  Plus, 
-  Trash2, 
-  Printer, 
-  Settings, 
-  AlertTriangle,
-  ChevronUp,
-  ChevronDown,
-  Info,
-  X,
-  Check,
-  Bell
-} from 'lucide-react';
-
-// --- CONFIGURACIÓN DE FESTIVOS SEVILLA 2026 ---
-const INITIAL_HOLIDAYS = [
-  { date: '2026-01-01', name: 'Año Nuevo', type: 'nacional' },
-  { date: '2026-01-06', name: 'Epifanía del Señor', type: 'nacional' },
-  { date: '2026-02-28', name: 'Día de Andalucía', type: 'regional' },
-  { date: '2026-04-02', name: 'Jueves Santo', type: 'nacional' },
-  { date: '2026-04-03', name: 'Viernes Santo', type: 'nacional' },
-  { date: '2026-05-01', name: 'Fiesta del Trabajo', type: 'nacional' },
-  { date: '2026-05-30', name: 'San Fernando', type: 'local' },
-  { date: '2026-06-04', name: 'Corpus Christi', type: 'local' },
-  { date: '2026-08-15', name: 'Asunción de la Virgen', type: 'nacional' },
-  { date: '2026-10-12', name: 'Fiesta Nacional de España', type: 'nacional' },
-  { date: '2026-11-02', name: 'Traslado Todos los Santos', type: 'nacional' },
-  { date: '2026-12-07', name: 'Traslado Día Constitución', type: 'nacional' },
-  { date: '2026-12-08', name: 'Inmaculada Concepción', type: 'nacional' },
-  { date: '2026-12-25', name: 'Navidad', type: 'nacional' },
-];
-
-const ABSENCE_TYPES = {
-  VACATION: { id: 'V', label: 'Vacaciones', color: 'bg-blue-500', text: 'text-white' },
-  FREE_DAY: { id: 'LD', label: 'Libre Disposición', color: 'bg-green-500', text: 'text-white' },
-  HALF_DAY: { id: '1/2', label: 'Media Jornada', color: 'bg-yellow-400', text: 'text-black' },
-  INTENSIVE: { id: 'I', label: 'Intensiva', color: 'bg-purple-400', text: 'text-white' },
-  CLOSED: { id: 'C', label: 'Cierre Empresa', color: 'bg-red-600', text: 'text-white' },
-};
-
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-];
-
-const DAYS_SHORT = ["L", "M", "X", "J", "V", "S", "D"];
-
-const App = () => {
-  const [year, setYear] = useState(2026);
-  const [applicants, setApplicants] = useState([]);
-  const [holidays, setHolidays] = useState(INITIAL_HOLIDAYS);
-  const [selectedApplicantId, setSelectedApplicantId] = useState(null);
-  const [selectedType, setSelectedType] = useState('VACATION');
-  const [notes, setNotes] = useState("NOTAS:\n* Los días libres se pedirán con 15 días de antelación.\n* No podrán coincidir más de 2 personas de vacaciones simultáneamente.");
-  
-  // Estados de UI
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newNameInput, setNewNameInput] = useState("");
-  const [notification, setNotification] = useState(null);
-
-  // Mostrar notificaciones temporales en lugar de alert()
-  const notify = (msg, type = "info") => {
-    setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // Inicializar datos
-  useEffect(() => {
-    const savedData = localStorage.getItem('vacations_data_2026');
-    if (savedData) {
-      try {
-        const parsed = JSON.parse(savedData);
-        setApplicants(parsed.applicants || []);
-        setHolidays(parsed.holidays || INITIAL_HOLIDAYS);
-        setNotes(parsed.notes || "");
-      } catch (e) {
-        console.error("Error al cargar datos", e);
-      }
-    } else {
-      const defaultApplicants = [
-        "JUAN PÉREZ", "MARÍA GARCÍA", "RICARDO SOTO", "ALMUDENA RUIZ", 
-        "CARLOS MARTÍN", "BEATRIZ LUNA", "FRANCISCO JAVIER", "ELENA CANO", 
-        "SERGIO MORA", "PATRICIA VEGA", "MIGUEL ÁNGEL", "SARA TORRES", 
-        "MANUEL CORTÉS", "RAQUEL PEÑA", "ADRIÁN BLANCO"
-      ].map((name, index) => ({
-        id: (index + 1).toString(),
-        name: name,
-        absences: {}
-      }));
-      setApplicants(defaultApplicants);
-    }
-  }, []);
-
-  // Guardar datos
-  const saveData = () => {
-    const data = { applicants, holidays, notes };
-    localStorage.setItem('vacations_data_2026', JSON.stringify(data));
-    notify("Datos guardados correctamente", "success");
-  };
-
-  const handleAddApplicantSubmit = (e) => {
-    if (e) e.preventDefault();
-    if (newNameInput && newNameInput.trim() !== "") {
-      const newId = Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-      setApplicants(prev => [
-        ...prev, 
-        { 
-          id: newId, 
-          name: newNameInput.trim().toUpperCase(), 
-          absences: {} 
-        }
-      ]);
-      setNewNameInput("");
-      setShowAddForm(false);
-      notify("Solicitante añadido");
-    }
-  };
-
-  // FUNCIÓN DE ELIMINACIÓN CORREGIDA (SIN CONFIRM NATIVO)
-  const removeApplicant = (id) => {
-    setApplicants(prev => prev.filter(a => a.id !== id));
-    if (selectedApplicantId === id) setSelectedApplicantId(null);
-    notify("Solicitante eliminado", "warning");
-  };
-
-  const updateApplicantName = (id, newName) => {
-    setApplicants(prev => prev.map(a => a.id === id ? { ...a, name: newName.toUpperCase() } : a));
-  };
-
-  const moveApplicant = (index, direction) => {
-    setApplicants(prev => {
-      const newApplicants = [...prev];
-      const targetIndex = index + direction;
-      if (targetIndex >= 0 && targetIndex < newApplicants.length) {
-        [newApplicants[index], newApplicants[targetIndex]] = [newApplicants[targetIndex], newApplicants[index]];
-      }
-      return newApplicants;
-    });
-  };
-
-  const toggleDay = (dateStr) => {
-    if (!selectedApplicantId) {
-      notify("Selecciona primero un solicitante", "warning");
-      return;
-    }
-
-    setApplicants(prev => prev.map(app => {
-      if (app.id === selectedApplicantId) {
-        const newAbsences = { ...app.absences };
-        if (newAbsences[dateStr] === selectedType) {
-          delete newAbsences[dateStr];
-        } else {
-          newAbsences[dateStr] = selectedType;
-        }
-        return { ...app, absences: newAbsences };
-      }
-      return app;
-    }));
-  };
-
-  const getDayInfo = (date) => {
-    const dateStr = date.toISOString().split('T')[0];
-    const holiday = holidays.find(h => h.date === dateStr);
-    const dayAbsences = applicants.map(app => ({
-      name: app.name,
-      type: app.absences[dateStr]
-    })).filter(a => a.type);
-    
-    return { holiday, dayAbsences, dateStr };
-  };
-
-  const calendarData = useMemo(() => {
-    const months = [];
-    for (let m = 0; m < 12; m++) {
-      const days = [];
-      const firstDay = new Date(year, m, 1);
-      const lastDay = new Date(year, m + 1, 0);
-      
-      let startDay = firstDay.getDay(); 
-      startDay = startDay === 0 ? 6 : startDay - 1;
-
-      for (let i = 0; i < startDay; i++) days.push(null);
-
-      for (let d = 1; d <= lastDay.getDate(); d++) {
-        days.push(new Date(year, m, d));
-      }
-      months.push({ name: MONTHS[m], days });
-    }
-    return months;
-  }, [year]);
-
-  const calculateTotals = (app) => {
-    const counts = { VACATION: 0, FREE_DAY: 0, HALF_DAY: 0, INTENSIVE: 0, CLOSED: 0 };
-    Object.values(app.absences).forEach(type => {
-      if (counts[type] !== undefined) counts[type]++;
-    });
-    return counts;
-  };
-
-  const checkConflict = (dateStr) => {
-    const count = applicants.filter(app => app.absences[dateStr]).length;
-    return count > 2;
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-800 print:bg-white print:p-0">
-      
-      {/* NOTIFICACIÓN FLOTANTE */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-bold text-white shadow-xl animate-in fade-in slide-in-from-top-4 duration-300 ${notification.type === 'success' ? 'bg-emerald-600' : notification.type === 'warning' ? 'bg-orange-500' : 'bg-slate-800'}`}>
-          <Bell size={16} />
-          {notification.msg}
-        </div>
-      )}
-
-      {/* HEADER PRINCIPAL */}
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white p-4 shadow-sm print:hidden">
-        <div className="flex items-center gap-3">
-          <div className="rounded-lg bg-indigo-600 p-2 text-white">
-            <Calendar size={24} />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800">
-            Calendario de Vacaciones <span className="text-indigo-600">{year}</span>
-          </h1>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button 
-            onClick={saveData}
-            className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
-          >
-            <Save size={16} /> Guardar Cambios
-          </button>
-          <button 
-            onClick={() => window.print()}
-            className="flex items-center gap-2 rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-          >
-            <Printer size={16} /> Imprimir / PDF
-          </button>
-          <select 
-            value={year} 
-            onChange={(e) => setYear(parseInt(e.target.value))}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium shadow-sm outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value={2025}>2025</option>
-            <option value={2026}>2026</option>
-            <option value={2027}>2027</option>
-          </select>
-        </div>
-      </header>
-
-      {/* VISTA ANUAL DEL CALENDARIO */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 print:grid-cols-3 print:gap-2">
-        {calendarData.map((month, mIdx) => (
-          <div key={mIdx} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-            <div className="bg-slate-100 py-2 text-center font-bold uppercase tracking-wider text-slate-700 border-b border-slate-200">
-              {month.name}
-            </div>
-            <div className="grid grid-cols-7 gap-px bg-slate-200">
-              {DAYS_SHORT.map(d => (
-                <div key={d} className="bg-white py-1 text-center text-[10px] font-bold text-slate-400">
-                  {d}
-                </div>
-              ))}
-              {month.days.map((date, dIdx) => {
-                if (!date) return <div key={`empty-${dIdx}`} className="bg-slate-50 h-10 print:h-8" />;
-                
-                const { holiday, dayAbsences, dateStr } = getDayInfo(date);
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-                const conflict = checkConflict(dateStr);
-                
-                let bgColor = "bg-white";
-                let textColor = "text-slate-700";
-                
-                if (holiday) {
-                  bgColor = holiday.type === 'local' ? 'bg-orange-100' : 'bg-red-50';
-                  textColor = holiday.type === 'local' ? 'text-orange-700' : 'text-red-700';
-                } else if (isWeekend) {
-                  bgColor = "bg-slate-50";
-                  textColor = "text-slate-400";
-                }
-
-                return (
-                  <div 
-                    key={dateStr}
-                    onClick={() => toggleDay(dateStr)}
-                    className={`relative group h-10 cursor-pointer border-t border-l border-slate-100 p-1 text-center transition-all hover:ring-2 hover:ring-indigo-400 print:h-8 ${bgColor}`}
-                    title={holiday ? holiday.name : ""}
-                  >
-                    <span className={`text-xs font-semibold ${textColor}`}>
-                      {date.getDate()}
-                    </span>
-                    
-                    <div className="mt-1 flex flex-wrap justify-center gap-0.5">
-                      {dayAbsences.map((abs, i) => (
-                        <div 
-                          key={i} 
-                          className={`h-1.5 w-1.5 rounded-full ${ABSENCE_TYPES[abs.type].color}`}
-                          title={`${abs.name}: ${ABSENCE_TYPES[abs.type].label}`}
-                        />
-                      ))}
-                    </div>
-
-                    {conflict && (
-                      <div className="absolute top-0 right-0 p-0.5 text-orange-500">
-                        <AlertTriangle size={8} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* LEYENDA Y CONTROL DE EDICIÓN */}
-      <section className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3 print:mt-4 print:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 flex items-center gap-2 font-bold text-slate-800 uppercase text-sm tracking-widest">
-            <Info size={16} className="text-indigo-500" /> Leyenda
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            {Object.entries(ABSENCE_TYPES).map(([key, value]) => (
-              <button
-                key={key}
-                onClick={() => setSelectedType(key)}
-                className={`flex items-center gap-2 rounded-md border p-2 text-xs font-medium transition ${selectedType === key ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' : 'border-slate-100 bg-white hover:border-slate-300'}`}
-              >
-                <span className={`flex h-5 w-8 items-center justify-center rounded text-[10px] font-bold ${value.color} ${value.text}`}>
-                  {value.id}
-                </span>
-                {value.label}
-              </button>
-            ))}
-            <div className="col-span-2 mt-2 space-y-2 border-t pt-2">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="h-3 w-3 rounded-full bg-red-50 border border-red-200"></span> Festivo Nacional / Regional
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="h-3 w-3 rounded-full bg-orange-100 border border-orange-300"></span> Festivo Local (Sevilla)
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-4 font-bold text-slate-800 uppercase text-sm tracking-widest">Observaciones y Normas</h3>
-          <textarea 
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="h-32 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 outline-none focus:ring-2 focus:ring-indigo-500 print:h-auto"
-            placeholder="Escribe aquí las normas de la empresa..."
-          />
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm print:hidden">
-          <h3 className="mb-4 flex items-center justify-between font-bold text-slate-800 uppercase text-sm tracking-widest">
-            Festivos Sevilla 2026
-            <Settings size={14} className="text-slate-400" />
-          </h3>
-          <div className="max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-            <ul className="space-y-1.5 text-xs text-slate-600">
-              {holidays.sort((a,b) => a.date.localeCompare(b.date)).map((h, i) => (
-                <li key={i} className="flex items-center justify-between gap-2 border-b border-slate-50 pb-1">
-                  <span>{new Date(h.date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}</span>
-                  <span className="flex-1 font-medium">{h.name}</span>
-                  <span className={`rounded px-1 text-[9px] uppercase font-bold ${h.type === 'local' ? 'bg-orange-100 text-orange-600' : 'bg-red-100 text-red-600'}`}>
-                    {h.type}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* TABLA DE SOLICITANTES Y RESUMEN */}
-      <section className="mt-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
-          <h3 className="flex items-center gap-2 font-bold text-slate-800 uppercase text-sm tracking-widest">
-            <Users size={18} className="text-indigo-500" /> Planificación por Solicitante
-          </h3>
-          
-          <div className="flex items-center gap-2 print:hidden">
-            {showAddForm ? (
-              <form onSubmit={handleAddApplicantSubmit} className="flex items-center gap-2">
-                <input 
-                  type="text" 
-                  autoFocus
-                  placeholder="Nombre del solicitante"
-                  className="rounded-md border border-indigo-200 px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
-                  value={newNameInput}
-                  onChange={(e) => setNewNameInput(e.target.value)}
-                />
-                <button type="submit" className="rounded-md bg-indigo-600 p-1.5 text-white hover:bg-indigo-700">
-                  <Check size={14} />
-                </button>
-                <button type="button" onClick={() => setShowAddForm(false)} className="rounded-md bg-slate-200 p-1.5 text-slate-600 hover:bg-slate-300">
-                  <X size={14} />
-                </button>
-              </form>
-            ) : (
-              <button 
-                onClick={() => setShowAddForm(true)}
-                className="flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-indigo-700"
-              >
-                <Plus size={14} /> Añadir Solicitante
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500 shadow-sm">
-              <tr>
-                <th className="px-6 py-3 font-bold border-r">Solicitante</th>
-                <th className="px-4 py-3 text-center border-r">V</th>
-                <th className="px-4 py-3 text-center border-r">LD</th>
-                <th className="px-4 py-3 text-center border-r">1/2</th>
-                <th className="px-4 py-3 text-center border-r">I</th>
-                <th className="px-4 py-3 text-center border-r">Total</th>
-                <th className="px-6 py-3 print:hidden">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {applicants.map((app, index) => {
-                const totals = calculateTotals(app);
-                const isSelected = selectedApplicantId === app.id;
-                const totalDays = totals.VACATION + totals.FREE_DAY + (totals.HALF_DAY * 0.5);
-
-                return (
-                  <tr 
-                    key={app.id} 
-                    className={`group transition-colors ${isSelected ? 'bg-indigo-50/50' : 'hover:bg-slate-50'}`}
-                  >
-                    <td className="px-6 py-3 font-medium border-r">
-                      <div className="flex items-center gap-3">
-                        <input 
-                          type="text" 
-                          value={app.name}
-                          onChange={(e) => updateApplicantName(app.id, e.target.value)}
-                          className={`bg-transparent outline-none focus:border-b border-indigo-500 w-full ${isSelected ? 'font-bold text-indigo-700' : ''}`}
-                        />
-                        <button 
-                          onClick={() => setSelectedApplicantId(isSelected ? null : app.id)}
-                          className={`rounded px-2 py-1 text-[10px] font-bold uppercase transition ${isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'} print:hidden`}
-                        >
-                          {isSelected ? 'Seleccionado' : 'Seleccionar'}
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center font-bold text-blue-600 border-r">{totals.VACATION || '-'}</td>
-                    <td className="px-4 py-3 text-center font-bold text-green-600 border-r">{totals.FREE_DAY || '-'}</td>
-                    <td className="px-4 py-3 text-center font-bold text-yellow-600 border-r">{totals.HALF_DAY || '-'}</td>
-                    <td className="px-4 py-3 text-center font-bold text-purple-600 border-r">{totals.INTENSIVE || '-'}</td>
-                    <td className="px-4 py-3 text-center font-bold text-slate-800 border-r bg-slate-50/50">
-                      {totalDays.toFixed(1)}
-                    </td>
-                    <td className="px-6 py-3 print:hidden">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => moveApplicant(index, -1)} className="p-1 text-slate-400 hover:text-indigo-600"><ChevronUp size={16}/></button>
-                        <button onClick={() => moveApplicant(index, 1)} className="p-1 text-slate-400 hover:text-indigo-600"><ChevronDown size={16}/></button>
-                        {/* BOTÓN DE ELIMINAR ACTIVADO */}
-                        <button 
-                          onClick={() => removeApplicant(app.id)} 
-                          className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Eliminar solicitante"
-                        >
-                          <Trash2 size={16}/>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {applicants.length === 0 && (
-                <tr>
-                  <td colSpan="7" className="px-6 py-10 text-center text-slate-400 italic">
-                    No hay solicitantes añadidos. Haz clic en "Añadir Solicitante" para empezar.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <footer className="mt-8 text-center text-xs text-slate-400 print:mt-10">
-        <p>&copy; 2026 Gestión de Vacaciones Corporativas - Versión Digital para Sevilla</p>
-      </footer>
-
-      <style dangerouslySetInnerHTML={{ __html: `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Vacaciones 2026 - Sevilla</title>
+    <!-- React y Babel para ejecutar JSX en el navegador -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
         @media print {
-          body { -webkit-print-color-adjust: exact; }
-          .print\\:hidden { display: none !important; }
-          .print\\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
-          .custom-scrollbar { overflow: visible !important; max-height: none !important; }
+            .no-print { display: none !important; }
+            body { background: white !important; -webkit-print-color-adjust: exact; }
+            .print-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 8px !important; }
+            .print-full-width { width: 100% !important; max-height: none !important; overflow: visible !important; }
         }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        
-        /* Animaciones para las notificaciones */
-        .animate-in { animation: animate-in 0.3s ease-out; }
-        @keyframes animate-in {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-      `}} />
-    </div>
-  );
-};
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+    <div id="root"></div>
 
-export default App;
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        // --- ICONOS SVG (Inline para evitar dependencias externas) ---
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const icons = {
+                Calendar: <path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />,
+                Users: <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm13 14v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />,
+                Save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />,
+                Plus: <path d="M12 5v14M5 12h14" />,
+                Trash2: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" />,
+                Printer: <path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1-2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" />,
+                // CORRECCIÓN: Envolviendo elementos adyacentes en un fragmento <>
+                Info: (
+                    <>
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 16v-4M12 8h.01" />
+                    </>
+                ),
+                Bell: <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />,
+                ChevronUp: <path d="m18 15-6-6-6 6" />,
+                ChevronDown: <path d="m6 9 6 6 6-6" />,
+                Check: <path d="M20 6 9 17l-5-5" />,
+                X: <path d="M18 6 6 18M6 6l12 12" />
+            };
+            return (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    {icons[name]}
+                </svg>
+            );
+        };
+
+        const INITIAL_HOLIDAYS = [
+            { date: '2026-01-01', name: 'Año Nuevo', type: 'nacional' },
+            { date: '2026-01-06', name: 'Epifanía del Señor', type: 'nacional' },
+            { date: '2026-02-28', name: 'Día de Andalucía', type: 'regional' },
+            { date: '2026-04-02', name: 'Jueves Santo', type: 'nacional' },
+            { date: '2026-04-03', name: 'Viernes Santo', type: 'nacional' },
+            { date: '2026-05-01', name: 'Fiesta del Trabajo', type: 'nacional' },
+            { date: '2026-05-30', name: 'San Fernando', type: 'local' },
+            { date: '2026-06-04', name: 'Corpus Christi', type: 'local' },
+            { date: '2026-08-15', name: 'Asunción de la Virgen', type: 'nacional' },
+            { date: '2026-10-12', name: 'Fiesta Nacional de España', type: 'nacional' },
+            { date: '2026-11-02', name: 'Traslado Todos los Santos', type: 'nacional' },
+            { date: '2026-12-07', name: 'Traslado Día Constitución', type: 'nacional' },
+            { date: '2026-12-08', name: 'Inmaculada Concepción', type: 'nacional' },
+            { date: '2026-12-25', name: 'Navidad', type: 'nacional' },
+        ];
+
+        const ABSENCE_TYPES = {
+            VACATION: { id: 'V', label: 'Vacaciones', color: 'bg-blue-500', text: 'text-white' },
+            FREE_DAY: { id: 'LD', label: 'Libre Disposición', color: 'bg-green-500', text: 'text-white' },
+            HALF_DAY: { id: '1/2', label: 'Media Jornada', color: 'bg-yellow-400', text: 'text-black' },
+            INTENSIVE: { id: 'I', label: 'Intensiva', color: 'bg-purple-400', text: 'text-white' },
+            CLOSED: { id: 'C', label: 'Cierre Empresa', color: 'bg-red-600', text: 'text-white' },
+        };
+
+        const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        const DAYS_SHORT = ["L", "M", "X", "J", "V", "S", "D"];
+
+        function App() {
+            const [year, setYear] = useState(2026);
+            const [applicants, setApplicants] = useState([]);
+            const [holidays, setHolidays] = useState(INITIAL_HOLIDAYS);
+            const [selectedApplicantId, setSelectedApplicantId] = useState(null);
+            const [selectedType, setSelectedType] = useState('VACATION');
+            const [notes, setNotes] = useState("NOTAS:\n* Los días libres se pedirán con 15 días de antelación.\n* No podrán coincidir más de 2 personas de vacaciones simultáneamente.");
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [newNameInput, setNewNameInput] = useState("");
+            const [notification, setNotification] = useState(null);
+
+            const notify = (msg, type = "info") => {
+                setNotification({ msg, type });
+                setTimeout(() => setNotification(null), 3000);
+            };
+
+            useEffect(() => {
+                const savedData = localStorage.getItem('vacations_data_2026_v2');
+                if (savedData) {
+                    try {
+                        const parsed = JSON.parse(savedData);
+                        setApplicants(parsed.applicants || []);
+                        setHolidays(parsed.holidays || INITIAL_HOLIDAYS);
+                        setNotes(parsed.notes || "");
+                    } catch (e) { console.error(e); }
+                } else {
+                    const defaultNames = ["JUAN PÉREZ", "MARÍA GARCÍA", "RICARDO SOTO", "ALMUDENA RUIZ", "CARLOS MARTÍN", "BEATRIZ LUNA", "FRANCISCO JAVIER", "ELENA CANO", "SERGIO MORA", "PATRICIA VEGA", "MIGUEL ÁNGEL", "SARA TORRES", "MANUEL CORTÉS", "RAQUEL PEÑA", "ADRIÁN BLANCO"];
+                    setApplicants(defaultNames.map((name, i) => ({ id: (i + 1).toString(), name, absences: {} })));
+                }
+            }, []);
+
+            const saveData = () => {
+                localStorage.setItem('vacations_data_2026_v2', JSON.stringify({ applicants, holidays, notes }));
+                notify("Datos guardados con éxito", "success");
+            };
+
+            const handleAddApplicant = (e) => {
+                e.preventDefault();
+                if (newNameInput.trim()) {
+                    const newId = Date.now().toString();
+                    setApplicants(prev => [...prev, { id: newId, name: newNameInput.trim().toUpperCase(), absences: {} }]);
+                    setNewNameInput("");
+                    setShowAddForm(false);
+                    notify("Solicitante añadido");
+                }
+            };
+
+            const removeApplicant = (id) => {
+                setApplicants(prev => prev.filter(a => a.id !== id));
+                if (selectedApplicantId === id) setSelectedApplicantId(null);
+                notify("Solicitante eliminado", "warning");
+            };
+
+            const updateApplicantName = (id, newName) => {
+                setApplicants(prev => prev.map(a => a.id === id ? { ...a, name: newName.toUpperCase() } : a));
+            };
+
+            const moveApplicant = (index, dir) => {
+                const newItems = [...applicants];
+                const target = index + dir;
+                if (target >= 0 && target < newItems.length) {
+                    [newItems[index], newItems[target]] = [newItems[target], newItems[index]];
+                    setApplicants(newItems);
+                }
+            };
+
+            const toggleDay = (dateStr) => {
+                if (!selectedApplicantId) {
+                    notify("Selecciona primero un solicitante", "warning");
+                    return;
+                }
+                setApplicants(prev => prev.map(app => {
+                    if (app.id === selectedApplicantId) {
+                        const newAbsences = { ...app.absences };
+                        newAbsences[dateStr] === selectedType ? delete newAbsences[dateStr] : newAbsences[dateStr] = selectedType;
+                        return { ...app, absences: newAbsences };
+                    }
+                    return app;
+                }));
+            };
+
+            const calendarData = useMemo(() => {
+                const months = [];
+                for (let m = 0; m < 12; m++) {
+                    const days = [];
+                    const firstDay = new Date(year, m, 1);
+                    const lastDay = new Date(year, m + 1, 0);
+                    let startDay = (firstDay.getDay() + 6) % 7;
+                    for (let i = 0; i < startDay; i++) days.push(null);
+                    for (let d = 1; d <= lastDay.getDate(); d++) days.push(new Date(year, m, d));
+                    months.push({ name: MONTHS[m], days });
+                }
+                return months;
+            }, [year]);
+
+            const calculateTotals = (app) => {
+                const totals = { V: 0, LD: 0, HALF: 0, I: 0 };
+                Object.values(app.absences).forEach(type => {
+                    if (type === 'VACATION') totals.V++;
+                    else if (type === 'FREE_DAY') totals.LD++;
+                    else if (type === 'HALF_DAY') totals.HALF++;
+                    else if (type === 'INTENSIVE') totals.I++;
+                });
+                return totals;
+            };
+
+            return (
+                <div className="p-4 md:p-6 max-w-[1600px] mx-auto">
+                    {notification && (
+                        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-bold text-white shadow-xl animate-fade-in ${notification.type === 'success' ? 'bg-emerald-600' : notification.type === 'warning' ? 'bg-orange-500' : 'bg-slate-800'}`}>
+                            <Icon name="Bell" size={16} /> {notification.msg}
+                        </div>
+                    )}
+
+                    <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white p-4 rounded-xl shadow-sm no-print">
+                        <div className="flex items-center gap-3">
+                            <div className="rounded-lg bg-indigo-600 p-2 text-white">
+                                <Icon name="Calendar" size={24} />
+                            </div>
+                            <h1 className="text-xl font-bold text-slate-800">Vacaciones <span className="text-indigo-600">{year}</span></h1>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button onClick={saveData} className="flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition">
+                                <Icon name="Save" size={16} /> Guardar
+                            </button>
+                            <button onClick={() => window.print()} className="flex items-center gap-2 rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition">
+                                <Icon name="Printer" size={16} /> Imprimir
+                            </button>
+                            <select value={year} onChange={(e) => setYear(parseInt(e.target.value))} className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-500">
+                                <option value={2025}>2025</option>
+                                <option value={2026}>2026</option>
+                                <option value={2027}>2027</option>
+                            </select>
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 print-grid">
+                        {calendarData.map((month, mIdx) => (
+                            <div key={mIdx} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                                <div className="bg-slate-100 py-2 text-center font-bold text-slate-700 border-b border-slate-200 uppercase text-xs tracking-wider">{month.name}</div>
+                                <div className="grid grid-cols-7 bg-slate-200 gap-px">
+                                    {DAYS_SHORT.map(d => <div key={d} className="bg-white py-1 text-center text-[10px] font-bold text-slate-400">{d}</div>)}
+                                    {month.days.map((date, dIdx) => {
+                                        if (!date) return <div key={dIdx} className="bg-slate-50 h-10" />;
+                                        const dateStr = date.toISOString().split('T')[0];
+                                        const holiday = holidays.find(h => h.date === dateStr);
+                                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                                        const dayAbsences = applicants.filter(a => a.absences[dateStr]).map(a => ({ name: a.name, type: a.absences[dateStr] }));
+                                        
+                                        let bg = holiday ? (holiday.type === 'local' ? 'bg-orange-100' : 'bg-red-50') : (isWeekend ? 'bg-slate-50' : 'bg-white');
+                                        let text = holiday ? (holiday.type === 'local' ? 'text-orange-700' : 'text-red-700') : (isWeekend ? 'text-slate-400' : 'text-slate-700');
+
+                                        return (
+                                            <div key={dateStr} onClick={() => toggleDay(dateStr)} className={`h-10 p-1 relative cursor-pointer hover:ring-2 hover:ring-indigo-400 border-t border-l border-slate-100 text-center ${bg}`}>
+                                                <span className={`text-xs font-bold ${text}`}>{date.getDate()}</span>
+                                                <div className="flex flex-wrap justify-center gap-0.5 mt-0.5">
+                                                    {dayAbsences.map((abs, i) => <div key={i} className={`w-1.5 h-1.5 rounded-full ${ABSENCE_TYPES[abs.type].color}`} />)}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8 no-print">
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                            <h3 className="text-sm font-bold uppercase tracking-widest mb-4 flex items-center gap-2"><Icon name="Info" size={16} className="text-indigo-500" /> Leyenda</h3>
+                            <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(ABSENCE_TYPES).map(([key, value]) => (
+                                    <button key={key} onClick={() => setSelectedType(key)} className={`flex items-center gap-2 p-2 rounded-lg border text-xs font-bold transition ${selectedType === key ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' : 'border-slate-100 bg-white hover:border-slate-200'}`}>
+                                        <span className={`w-6 h-5 flex items-center justify-center rounded text-[9px] ${value.color} ${value.text}`}>{value.id}</span> {value.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                            <h3 className="text-sm font-bold uppercase tracking-widest mb-4">Normas Empresa</h3>
+                            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full h-24 text-xs p-3 bg-slate-50 border rounded-lg resize-none outline-none focus:ring-2 focus:ring-indigo-500" />
+                        </div>
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                            <h3 className="text-sm font-bold uppercase tracking-widest mb-4">Festivos Sevilla</h3>
+                            <div className="max-h-24 overflow-y-auto custom-scrollbar text-xs space-y-1">
+                                {holidays.map((h, i) => <div key={i} className="flex justify-between border-b border-slate-50 pb-1">
+                                    <span className="font-bold">{h.date.split('-').reverse().slice(0,2).join('/')}</span> <span>{h.name}</span>
+                                </div>)}
+                            </div>
+                        </div>
+                    </div>
+
+                    <section className="mt-8 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden print-full-width">
+                        <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center no-print">
+                            <h3 className="text-sm font-bold uppercase tracking-widest flex items-center gap-2"><Icon name="Users" size={18} className="text-indigo-500" /> Planificación Empleados</h3>
+                            {showAddForm ? (
+                                <form onSubmit={handleAddApplicant} className="flex gap-2">
+                                    <input autoFocus value={newNameInput} onChange={(e) => setNewNameInput(e.target.value)} className="text-xs px-3 py-1.5 border rounded-md outline-none" placeholder="Nombre..." />
+                                    <button type="submit" className="p-1.5 bg-indigo-600 text-white rounded-md"><Icon name="Check" size={14}/></button>
+                                    <button type="button" onClick={() => setShowAddForm(false)} className="p-1.5 bg-slate-200 text-slate-600 rounded-md"><Icon name="X" size={14}/></button>
+                                </form>
+                            ) : (
+                                <button onClick={() => setShowAddForm(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1"><Icon name="Plus" size={14}/> Añadir</button>
+                            )}
+                        </div>
+                        <div className="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
+                            <table className="w-full text-xs text-left border-collapse">
+                                <thead className="sticky top-0 bg-slate-100 z-10 border-b">
+                                    <tr>
+                                        <th className="px-6 py-3 border-r font-bold uppercase">Solicitante</th>
+                                        <th className="px-4 py-3 text-center border-r font-bold">V</th>
+                                        <th className="px-4 py-3 text-center border-r font-bold">LD</th>
+                                        <th className="px-4 py-3 text-center border-r font-bold">1/2</th>
+                                        <th className="px-4 py-3 text-center border-r font-bold">I</th>
+                                        <th className="px-4 py-3 text-center border-r font-bold">Total</th>
+                                        <th className="px-6 py-3 no-print font-bold">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {applicants.map((app, i) => {
+                                        const t = calculateTotals(app);
+                                        const sum = t.V + t.LD + (t.HALF * 0.5);
+                                        return (
+                                            <tr key={app.id} className={`${selectedApplicantId === app.id ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                                                <td className="px-6 py-3 border-r">
+                                                    <div className="flex items-center gap-2">
+                                                        <input className="bg-transparent border-none outline-none font-medium w-full" value={app.name} onChange={(e) => updateApplicantName(app.id, e.target.value)} />
+                                                        <button onClick={() => setSelectedApplicantId(selectedApplicantId === app.id ? null : app.id)} className={`px-2 py-1 rounded text-[9px] font-bold uppercase no-print ${selectedApplicantId === app.id ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-500'}`}>{selectedApplicantId === app.id ? 'Seleccionado' : 'Elegir'}</button>
+                                                    </div>
+                                                </td>
+                                                <td className="text-center border-r font-bold text-blue-600">{t.V || '-'}</td>
+                                                <td className="text-center border-r font-bold text-green-600">{t.LD || '-'}</td>
+                                                <td className="text-center border-r font-bold text-yellow-600">{t.HALF || '-'}</td>
+                                                <td className="text-center border-r font-bold text-purple-600">{t.I || '-'}</td>
+                                                <td className="text-center border-r font-bold bg-slate-50">{sum.toFixed(1)}</td>
+                                                <td className="px-6 py-3 no-print">
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => moveApplicant(i, -1)} className="p-1 text-slate-400 hover:text-indigo-600"><Icon name="ChevronUp"/></button>
+                                                        <button onClick={() => moveApplicant(i, 1)} className="p-1 text-slate-400 hover:text-indigo-600"><Icon name="ChevronDown"/></button>
+                                                        <button onClick={() => removeApplicant(app.id)} className="p-1 text-slate-400 hover:text-red-600"><Icon name="Trash2"/></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

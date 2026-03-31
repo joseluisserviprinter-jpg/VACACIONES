@@ -27,7 +27,7 @@
         }
         .loading-overlay {
             position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(255, 255, 255, 0.9);
+            background: rgba(255, 255, 255, 0.95);
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             z-index: 9999;
         }
@@ -50,7 +50,7 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
         
-        // ID de aplicación fijo para asegurar sincronización en GitHub
+        // ID de aplicación fijo
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'vacaciones-empresa-2026-v1';
 
         window.fbServices = { auth, db, appId, setDoc, doc, onSnapshot, collection, signInAnonymously, signInWithCustomToken, onAuthStateChanged };
@@ -129,27 +129,39 @@
                 setTimeout(() => setNotification(null), 3000);
             };
 
-            // Autenticación inicial
+            // 1. Autenticación inicial
             useEffect(() => {
                 const initAuth = async () => {
-                    const { auth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } = window.fbServices;
+                    const services = window.fbServices;
+                    if (!services) return;
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
+                            await services.signInWithCustomToken(services.auth, __initial_auth_token);
                         } else {
-                            await signInAnonymously(auth);
+                            await services.signInAnonymously(services.auth);
                         }
-                        onAuthStateChanged(auth, setUser);
-                    } catch (e) { console.error("Error Auth:", e); }
+                        services.onAuthStateChanged(services.auth, setUser);
+                    } catch (e) { 
+                        console.error("Error Auth:", e);
+                        setHasLoadedCloud(true); // Desbloqueamos por error de auth
+                    }
                 };
                 initAuth();
+                
+                // Tiempo de espera máximo para desbloquear si la nube no responde
+                const timer = setTimeout(() => {
+                    setHasLoadedCloud(true);
+                }, 5000);
+                return () => clearTimeout(timer);
             }, []);
 
-            // Sincronización en tiempo real
+            // 2. Sincronización en tiempo real con RUTA ESTRICTA
             useEffect(() => {
                 if (!user) return;
                 const { db, appId, doc, onSnapshot } = window.fbServices;
-                const stateDoc = doc(db, 'artifacts', appId, 'public', 'data', 'global_state');
+                
+                // RUTA CORREGIDA A 7 SEGMENTOS: artifacts/{id}/public/data/vacations/current
+                const stateDoc = doc(db, 'artifacts', appId, 'public', 'data', 'vacations', 'current');
                 
                 const unsubscribe = onSnapshot(stateDoc, (snapshot) => {
                     if (snapshot.exists()) {
@@ -158,7 +170,7 @@
                         setHolidays(data.holidays || INITIAL_HOLIDAYS);
                         setNotes(data.notes || "");
                     } else {
-                        // Datos por defecto si es la primera vez en la historia
+                        // Carga inicial de 15 nombres si no hay datos
                         const defaultNames = ["JUAN PÉREZ", "MARÍA GARCÍA", "RICARDO SOTO", "ALMUDENA RUIZ", "CARLOS MARTÍN", "BEATRIZ LUNA", "FRANCISCO JAVIER", "ELENA CANO", "SERGIO MORA", "PATRICIA VEGA", "MIGUEL ÁNGEL", "SARA TORRES", "MANUEL CORTÉS", "RAQUEL PEÑA", "ADRIÁN BLANCO"];
                         setApplicants(defaultNames.map((name, i) => ({ id: (i + 1).toString(), name, absences: {} })));
                         setNotes("NOTAS:\n* Los días libres se pedirán con 15 días de antelación.\n* No podrán coincidir más de 2 personas de vacaciones simultáneamente.");
@@ -166,7 +178,7 @@
                     setHasLoadedCloud(true);
                 }, (err) => {
                     console.error("Error sincronización:", err);
-                    notify("Error al conectar con la base de datos", "warning");
+                    setHasLoadedCloud(true); // DESBLOQUEO CRÍTICO: Si hay error de permisos, mostramos la app igual
                 });
 
                 return () => unsubscribe();
@@ -175,7 +187,7 @@
             const saveData = async () => {
                 if (!user || !hasLoadedCloud) return;
                 const { db, appId, doc, setDoc } = window.fbServices;
-                const stateDoc = doc(db, 'artifacts', appId, 'public', 'data', 'global_state');
+                const stateDoc = doc(db, 'artifacts', appId, 'public', 'data', 'vacations', 'current');
                 
                 try {
                     setIsSyncing(true);
@@ -267,7 +279,7 @@
                     <div className="loading-overlay">
                         <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
                         <p className="font-bold text-slate-600 tracking-tight">Conectando con la base de datos...</p>
-                        <p className="text-xs text-slate-400 mt-2">Por favor, espera un momento.</p>
+                        <p className="text-xs text-slate-400 mt-2">Iniciando sesión segura para sincronizar dispositivos.</p>
                     </div>
                 );
             }
